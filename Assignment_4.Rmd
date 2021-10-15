@@ -1,30 +1,154 @@
 ---
-title: "Assignment 4"
+title: 'Assignment #4'
 author: "Tshering Wangchuk"
-date: "10/15/2021"
-output: html_document
+date: "15/10/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    code_download: true
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+#knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
 ```
 
-## R Markdown
+## SQL 
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+### Part 1
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+library(tidyverse) 
+library(dbplyr)
+library(mdsr) 
+library(RMySQL)
+library(RSQLite) 
+theme_set(theme_minimal())
 ```
 
-## Including Plots
+```{r}
+con_air <- dbConnect(RMySQL::MySQL(), 
+                     dbname = "airlines", 
+                     host = "mdsr.cdc7tgkkqd0n.us-east-1.rds.amazonaws.com", 
+                     user = "mdsr_public", 
+                     password = "ImhsmflMDSwR")
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+dbListTables(con_air)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+flights <-
+  tbl(con_air, "flights") %>%
+  select(month, arr_delay, origin, dest, air_time, distance) %>%
+  head(100)
+
+#by airport
+flights_air <- 
+  flights %>%
+  group_by(origin) %>%
+  summarize(n_flights = n(),
+  avg_length = mean(air_time),
+  avg_distance = mean(distance)) %>% 
+  inner_join(tbl(con_air, "airports"), 
+              by = c("origin" = "faa"))
+```
+```{r}
+air <- 
+  tbl(con_air, "flights") %>% 
+  head(100) %>% 
+  group_by(origin) %>% 
+  summarize(prop_late_over20 = mean(arr_delay > 20)) %>% 
+  arrange(desc(prop_late_over20)) %>%
+  rename(
+     prop_late_airport = prop_late_over20) #%>%
+   #as.data.frame(air, row.names = TRUE)
+
+airport_info <-
+  flights_air %>%
+  inner_join(air,
+            by = c("origin" = "origin")) %>%
+  select(name, n_flights, avg_distance, avg_length, prop_late_airport) %>%
+  arrange(desc(prop_late_airport))
+  #as.data.frame(flights_air, row.names = TRUE)
+
+#by month
+flights_mon <- 
+  flights %>%
+  group_by(month) %>%
+  summarize(n_flights = n(),
+  avg_length = mean(air_time),
+  avg_distance = mean(distance)) 
+
+mon <- 
+  tbl(con_air, "flights") %>% 
+  head(100) %>% 
+  group_by(month) %>% 
+  summarize(prop_late_over20 = mean(arr_delay > 20)) %>% 
+  arrange(desc(prop_late_over20)) %>%
+  #as.data.frame(mon, row.names = TRUE) %>%
+  rename(
+    prop_late_month = prop_late_over20)
+
+month_info <-
+flights_mon %>%
+  inner_join(mon,
+            by = c("month" = "month")) %>%
+  select(month, n_flights, avg_distance, avg_length, prop_late_month) %>%
+  arrange(desc(prop_late_month))
+```
+
+```{r}
+con_air <- dbConnect(RMySQL::MySQL(), 
+                     dbname = "airlines", 
+                     host = "mdsr.cdc7tgkkqd0n.us-east-1.rds.amazonaws.com", 
+                     user = "mdsr_public", 
+                     password = "ImhsmflMDSwR")
+
+dbListTables(con_air)
+```
+```{r}
+airport_info %>% 
+  show_query()
+```
+```{r}
+month_info %>% 
+  show_query()
+```
+```{r}
+airport_df <- as.data.frame(airport_info, row.names = TRUE)
+```
+
+```{r}
+month_df <- as.data.frame(month_info, row.names = TRUE)
+```
+
+```{r}
+worst_10_airports <-
+  airport_df %>%
+  select(name, n_flights, avg_distance, avg_length, prop_late_airport) %>%
+  arrange(desc(prop_late_airport)) %>%
+  head(10)
+
+
+ggplot(worst_10_airports, aes(x = name, y = prop_late_airport)) + 
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  labs(title = "10 Worst Airports", x = "Airport", y = "Proportion of >20 mins late")
+```
+
+```{r}
+knitr::kable(head(airport_df[1:6, c(1,5)]))
+```
+
+### Part 2
+
+<br> What is the average flight time?
+
+```{r}
+ggplot(airport_df, aes(x = name, y = avg_distance)) + 
+  geom_col() + 
+  labs(title = "Average Flight Time", x = "Airport", y = "Time") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
